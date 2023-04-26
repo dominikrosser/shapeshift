@@ -1,33 +1,105 @@
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::*;
+use bevy_rapier2d::prelude::{*, Velocity};
 use bevy::window::PrimaryWindow;
+
+use smooth_bevy_cameras::{LookTransform, LookTransformBundle, LookTransformPlugin, Smoother};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
         .add_plugin(RapierDebugRenderPlugin::default())
-        .add_startup_system(setup_camera)
-        .add_startup_system(spawn_player)
-        .add_startup_system(setup_physics)
+        // Local Geomorpher Plugins:
+        .add_plugin(GMCameraPlugin)
+        .add_startup_system(setup_player)
+        .add_startup_system(setup_platform)
         .add_system(print_ball_altitude)
         .add_system(player_movement_system)
-        .add_system(player_movement_confine_bounce_window_walls)
         .run();
 }
 
-fn setup_physics(
+pub struct GMCameraPlugin;
+impl Plugin for GMCameraPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .add_startup_system(setup_camera)
+            .add_system(move_camera_system);
+    }
+}
+
+fn setup_camera(
+    mut commands: Commands,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    ) {
+    let _window = window_query.get_single().unwrap();
+    commands.spawn(
+            Camera2dBundle {
+                transform: Transform::from_xyz(0.0, 0.0, 1.0),
+                ..default()
+            })
+            ;
+}
+
+fn move_camera_system(
+    mut camera_transform_query: Query<&mut Transform, (With<Camera2d>, Without<Player>)>,
+    player_transform_query: Query<&Transform, (With<Player>, Changed<Transform>)>,
+    time: Res<Time>,
+    ) {
+    // Get the player's translation
+    if let Ok(player_transform) = player_transform_query.get_single() {
+        let player_translation = player_transform.translation;
+        for mut camera_transform in camera_transform_query.iter_mut() {
+            let camera_translation = camera_transform.translation;
+            let speed = 100.0;
+            let movement_delta = (player_translation - camera_translation) * time.delta_seconds() * speed;
+            let movement_delta = movement_delta.clamp_length_max((player_translation-camera_translation).length());
+            camera_transform.translation += movement_delta;
+        }
+    }
+}
+
+fn setup_platform(
     mut commands: Commands,
 ) {
     /* Create the ground */
     commands.spawn(Collider::cuboid(500.0, 50.0))
-        .insert(TransformBundle::from(Transform::from_xyz(0.0, -250.0, 0.0)));
+        .insert(TransformBundle::from(Transform::from_xyz(0.0, -250.0, 0.0)))
+        .insert(Friction::coefficient(0.7))
+        .insert(Restitution::coefficient(0.8));
     
+}
+
+fn setup_player(
+    mut commands: Commands,
+    assets: Res<AssetServer>,
+) {
+    let shape_material = assets.load("sprites\\ball_blue_large.png");
+
     /* Create the bouncing ball */
     commands.spawn(RigidBody::Dynamic)
-        .insert(Collider::ball(50.0))
+        .insert(Collider::ball(32.0))
+        .insert(TransformBundle::from(Transform::from_xyz(0.0, 250.0, 0.0)))
+        .insert(Velocity {
+            linvel: Vec2::new(0.0, 0.0),
+            angvel: 0.0,
+        })
+        .insert(ColliderMassProperties::Density(1.0))
         .insert(Restitution::coefficient(0.7))
-        .insert(TransformBundle::from(Transform::from_xyz(0.0, 250.0, 0.0)));
+        .insert(Damping {
+            linear_damping: 0.5,
+            angular_damping: 0.5
+        })
+        .insert(GravityScale(1.0))
+        .insert(Ccd::enabled())
+        .insert(ExternalForce::default())
+        // Custom Stuff:
+        .insert(SpriteBundle {
+                texture: shape_material,
+                transform: Transform::from_xyz(0.0, 0.0, 0.0),
+                ..Default::default()
+            })
+        .insert(Player{});
+
 }
 
 fn print_ball_altitude(positions: Query<&Transform, With<RigidBody>>) {
@@ -36,110 +108,30 @@ fn print_ball_altitude(positions: Query<&Transform, With<RigidBody>>) {
     }
 }
 
-fn setup_camera(
-    mut commands: Commands,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    ) {
-    let window = window_query.get_single().unwrap();
-    commands.spawn((
-            Camera2dBundle {
-                transform: Transform::from_xyz(0.0, 0.0, 1.0),
-                ..default()
-            },
-            //UiCameraConfig::default(),
-            ));
-}
+
 
 #[derive(Component)]
 pub struct Player {}
 
-// TODO make velocity acceleration and mass into a bundle
-
-#[derive(Component)]
-struct Velocity(Vec2);
-
-#[derive(Component)]
-struct Acceleration(Vec2);
-
-#[derive(Component)]
-struct Mass(f32);
-
-fn spawn_player(
-    mut commands: Commands,
-    assets: Res<AssetServer>,
-    ) {
-    let shape_material = assets.load("sprites\\ball_blue_large.png");
-    commands.spawn((
-            SpriteBundle {
-                texture: shape_material,
-                transform: Transform::from_xyz(0.0, 0.0, 0.0),
-                ..Default::default()
-            },
-            Player {},
-            Velocity(Vec2::new(0.0, 0.0)),
-            Acceleration(Vec2::new(0.0, 0.0)),
-            Mass(1.0),
-        ));
-}
-
 fn player_movement_system(
     time: Res<Time>,
     keyboard_input: Res<Input<KeyCode>>,
-    mut player_query: Query<(&mut Transform, &mut Velocity, &mut Acceleration, &Mass), With<Player>>,
+    mut ext_forces: Query<&mut ExternalForce, With<Player>>,
     ) {
-
-    let mut input_acceleration = Vec2::new(0.0, 0.0);
+    let mut direction = Vec2::new(0.0, 0.0);
     if keyboard_input.pressed(KeyCode::W) {
-        input_acceleration.y += 1.0;
+        direction.y += 1.0;
     }
     if keyboard_input.pressed(KeyCode::S) {
-        input_acceleration.y -= 1.0;
+        direction.y -= 1.0;
     }
     if keyboard_input.pressed(KeyCode::A) {
-        input_acceleration.x -= 1.0;
+        direction.x -= 1.0;
     }
     if keyboard_input.pressed(KeyCode::D) {
-        input_acceleration.x += 1.0;
+        direction.x += 1.0;
     }
-
-    if let Ok((mut transform, mut velocity, mut acceleration, mass)) = player_query.get_single_mut() { 
-
-        if input_acceleration.length() > 0.0 {
-            input_acceleration = input_acceleration.normalize()*10000.0 / mass.0;
-        }
-        acceleration.0 = input_acceleration;// TODO
-
-        // Update velocity based on acceleration and time
-        velocity.0 += acceleration.0 * time.delta_seconds();
-
-        // Update position based on velocity and time
-        transform.translation += velocity.0.extend(0.0) * time.delta_seconds();
-    }
-}
-
-const PLAYER_SIZE : f32 = 64.0;
-
-fn player_movement_confine_bounce_window_walls(
-    mut player_query: Query<(&mut Transform, &mut Velocity, &mut Acceleration, &Mass), With<Player>>,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    ) {
-
-    let window = window_query.get_single().unwrap();
-
-    if let Ok((mut transform, mut velocity, mut acceleration, mass)) = player_query.get_single_mut() {
-        if transform.translation.x < -window.width()/2.0 + PLAYER_SIZE/2.0 {
-            transform.translation.x = -window.width()/2.0 + PLAYER_SIZE/2.0;
-            velocity.0.x = -velocity.0.x;
-        } else if transform.translation.x > window.width()/2.0 - PLAYER_SIZE/2.0 {
-            transform.translation.x = window.width()/2.0 - PLAYER_SIZE/2.0;
-            velocity.0.x = -velocity.0.x;
-        }
-        if transform.translation.y < -window.height()/2.0 + PLAYER_SIZE/2.0 {
-            transform.translation.y = -window.height()/2.0 + PLAYER_SIZE/2.0;
-            velocity.0.y = -velocity.0.y;
-        } else if transform.translation.y > window.height()/2.0 - PLAYER_SIZE/2.0 {
-            transform.translation.y = window.height()/2.0 - PLAYER_SIZE/2.0;
-            velocity.0.y = -velocity.0.y;
-        }
+    for mut ext_force in ext_forces.iter_mut() {
+        ext_force.force = direction * 150.0;
     }
 }
