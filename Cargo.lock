@@ -2507,12 +2507,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "glam"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad83ab008a4fa3b31dfa713dd41b5a9bdea1e94e4cf1e2fc274ffbd49b0271d3"
-
-[[package]]
 name = "glob"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3642,22 +3636,22 @@ dependencies = [
 
 [[package]]
 name = "particular"
-version = "0.5.1"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "393530a661289c7f9eaedfb33c6fb1ca6fdff97a9cbb541e4b74fcfc61ca775a"
+checksum = "31db1a3d0e075b9e71fd19d5bb2b850a4f5c81e832f5dc62dbe40ef09cfd97cf"
 dependencies = [
- "glam 0.24.0",
+ "glam 0.21.3",
  "particular_derive",
 ]
 
 [[package]]
 name = "particular_derive"
-version = "0.5.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ac37f926271d20172a80619d2b825db2234c37577c64b0ce31c2798c51ee1c5"
+checksum = "6e627a71af1b60fb5544afbf91a9ce422a4d6dafdc431c0de831340ee1bc651c"
 dependencies = [
  "quote",
- "syn 2.0.15",
+ "syn 1.0.109",
 ]
 
 [[package]]

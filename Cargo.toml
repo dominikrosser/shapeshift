@@ -12,7 +12,7 @@ bevy_math = "*"
 glam = "0.23.0"
 bevy-inspector-egui = "*"
 bevy_rapier2d = { version = "*", features = [ "simd-stable", "debug-render-2d" ] }
-particular = "0.5.1"
+particular = "0.1.6"
 bevy_mouse_tracking_plugin = "0.3.1"
 
 [profile.dev]
