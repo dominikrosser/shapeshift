@@ -1,12 +1,20 @@
+mod nbody;
+
 use bevy::{prelude::*};
 use bevy_rapier2d::prelude::{*, Velocity};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy::window::PrimaryWindow;
-
-
-
+use nbody::{ParticularPlugin, PointMass};
+use std::f32::consts::PI;
+use bevy::sprite::{Material2d, MaterialMesh2dBundle};
+use std::time::Duration;
 use particular::prelude::*;
-use particular::ParticleSet;
+use bevy::input::mouse::MouseButtonInput;
+use bevy::input::ButtonState;
+use bevy::window::PresentMode;
+use bevy_mouse_tracking_plugin::{MainCamera, MousePosWorld};
+
+const G: f32 = 1000.0;
 
 fn main() {
     App::new()
@@ -14,163 +22,14 @@ fn main() {
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
         .add_plugin(RapierDebugRenderPlugin::default())
         .add_plugin(WorldInspectorPlugin::new())
-        // Local Geomorpher Plugins:
         .add_plugin(GMCameraPlugin)
-        // Particle set
-        .init_resource::<GolfBallSettings>()
-        .insert_resource(ParticleSet::<Body>::new())
-        .insert_resource(ClearColor(Color::BLACK))
-        .add_startup_system(place_body)
-        .add_system(sync_particle_set)
-        .add_system(accelerate_particles)
-
+        .add_plugin(ParticularPlugin)
         .add_startup_system(setup_player)
         .add_startup_system(setup_platform)
         .add_system(print_ball_altitude)
         .add_system(player_movement_system)
         .run();
 }
-
-/* PARTICULAR */
-fn place_body(
-    mut commands: Commands,
-    mut body_info: ResMut<GolfBallSettings>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    ) {
-
-    body_info.position = Some(Vec3::new(0.0, 0.0, 0.0));
-    let place_pos = body_info.position.unwrap();
-
-    let mass: f32 = 100.0_f32.max(1.0);
-    let density = 1.0;
-    let radius =
-        (mass / (density * PI)).sqrt();
-    let _entity = commands.spawn(
-        CircleWithGravity {
-            shape_bundle: MaterialMesh2dBundle {
-                mesh: meshes
-                    .add(Mesh::from(shape::Circle {
-                        radius,
-                        ..default()
-                    }))
-                .into(),
-                transform: Transform::from_xyz(place_pos.x, place_pos.y, place_pos.z),
-                material: materials
-                    .add(ColorMaterial::from(Color::WHITE)),
-                    ..default()
-            },
-            collider: Collider::ball(radius),
-            friction: Friction {
-                coefficient: 10.0,
-                ..default()
-            },
-            mass: ColliderMassProperties::Mass(mass),
-            restitution: Restitution {
-                coefficient: 0.0,
-                ..default()
-            },
-            rigidbody: RigidBody::Dynamic,
-            velocity: Velocity::linear(Vec2::new(0.1,0.1)),
-            acceleration: ExternalForce::default(),
-            point_mass: PointMass::HasGravity {
-                // mass: body_info.mass,
-                mass: mass,
-            },
-        });
-}
-use std::f32::consts::PI;
-use bevy::sprite::{Material2d, MaterialMesh2dBundle};
-#[derive(Component)]
-pub enum PointMass {
-    HasGravity { mass: f32 },
-    AffectedByGravity,
-}
-
-fn sync_particle_set(
-    mut particle_set: ResMut<ParticleSet<Body>>,
-    query: Query<(&GlobalTransform, &PointMass)>,
-) {
-    *particle_set = ParticleSet::new();
-    query.for_each(|(transform, point_mass)| {
-        let mu = match point_mass {
-            PointMass::HasGravity { mass } => *mass * 100.0,
-            PointMass::AffectedByGravity => 0.0,
-        };
-        particle_set.add(Body::new(
-                transform.translation(),
-                mu,
-            ));
-    })
-}
-
-fn accelerate_particles(
-    mut particle_set: ResMut<ParticleSet<Body>>,
-    mut query: Query<&mut ExternalForce, With<PointMass>>,
-) {
-    for (body, gravity) in particle_set.result() {
-        if let Ok(mut acceleration) =
-            query.get_mut(body.entity)
-        {
-            acceleration.force = gravity.xy();
-        }
-    }
-}
-
-#[derive(Bundle)]
-pub struct CircleWithGravity<M: Material2d> {
-    #[bundle]
-    pub shape_bundle: MaterialMesh2dBundle<M>,
-    pub collider: Collider,
-    pub friction: Friction,
-    pub mass: ColliderMassProperties,
-    pub restitution: Restitution,
-    pub rigidbody: RigidBody,
-    pub velocity: Velocity,
-    pub acceleration: ExternalForce,
-    pub point_mass: PointMass,
-}
-
-pub struct GolfBallSettings {
-    pub position: Option<Vec3>,
-    pub mass: f32,
-    pub trail: bool,
-}
-impl bevy::prelude::Resource for GolfBallSettings {} 
-impl Default for GolfBallSettings {
-    fn default() -> Self {
-        Self {
-            position: None,
-            mass: 20.0,
-            trail: false,
-        }
-    }
-}
-
-
-#[derive(Particle/*, Component*/)]
-struct Body {
-    pub position: Vec3,
-    pub mu: f32,
-}
-impl Body {
-    fn new(position: Vec3, mu: f32) -> Self {
-        Self { position, mu }
-    }
-}
-
-/*
-fn accelerate_bodies(
-    time: Res<Time>,
-    mut bodies: Query<&mut Body>,
-    ) {
-    for (body, acceleration) in bodies.iter_mut().accelerations(&mut sequential::BruteForce) {
-       body.velocity += acceleration * time.delta_seconds();
-       body.position += body.velocity * time.delta_seconds();
-    }
-}
-*/
-/* PARTICULAR */
 
 pub struct GMCameraPlugin;
 impl Plugin for GMCameraPlugin {
@@ -284,8 +143,19 @@ fn player_movement_system(
         direction.x += 1.0;
     }
     for mut ext_force in ext_forces.iter_mut() {
-        ext_force.force = direction * 150.0;
+        ext_force.force += direction * 150.0;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
