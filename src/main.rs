@@ -1,21 +1,12 @@
 #![feature(slice_range)]
+
 mod nbody;
 
-use std::slice::range;
-
-use bevy::{prelude::*};
+use bevy::prelude::*;
 use bevy_rapier2d::prelude::{*, Velocity};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy::window::PrimaryWindow;
-use nbody::{ParticularPlugin};
-
-
-
-
-
-
-
-
+use nbody::ParticularPlugin;
 
 const G: f32 = 500000.0;// Arbitrarily chosen gravitational constant
 const NUM_RANDOMLY_ADDED_BODIES: usize = 8;
@@ -32,13 +23,88 @@ fn main() {
         .add_startup_system(setup_bodies)
         .add_startup_system(setup_platform_walls)
         .insert_resource(ClearColor(Color::BLACK))
+        .init_resource::<Fuel>()
         .add_system(print_ball_altitude)
         .add_system(
             pre_update_reset_forces.before(nbody::accelerate_particles).before(player_movement_system))
         .add_system(player_movement_system.after(nbody::accelerate_particles))
+        .add_system(print_fuel)
+        .init_resource::<SpawnStuffTimer>()
+        .add_system(tick_spawn_stuff_timer)
+        .add_system(spawn_stuff_over_time)
         .run();
 }
 
+#[derive(Resource)]
+pub struct Fuel {
+    pub amount: f32,
+}
+impl Default for Fuel {
+    fn default() -> Self {
+        Self {
+            amount: 100.0,
+        }
+    }
+}
+
+const STUFF_SPAWN_TIME_INTERVAL: f32 = 5.0;// seconds
+
+#[derive(Resource)]
+pub struct SpawnStuffTimer {
+    pub timer: Timer,
+}
+impl Default for SpawnStuffTimer {
+    fn default() -> Self {
+        Self {
+            timer: Timer::from_seconds(STUFF_SPAWN_TIME_INTERVAL, TimerMode::Repeating),
+        }
+    }
+}
+
+fn tick_spawn_stuff_timer(
+    mut spawn_stuff_timer: ResMut<SpawnStuffTimer>, time: Res<Time>) {
+    spawn_stuff_timer.timer.tick(time.delta());
+}
+
+fn spawn_stuff_over_time(
+    mut commands: Commands,
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    asset_server: Res<AssetServer>,
+    spawn_stuff_timer: Res<SpawnStuffTimer>,
+    ) {
+    let shape_material = asset_server.load("sprites\\ball_red_large.png");
+
+    if spawn_stuff_timer.timer.finished() {
+        let window = window_query.get_single().unwrap();
+        commands.spawn(RigidBody::Dynamic)
+            .insert(Collider::ball(32.0))
+            .insert(TransformBundle::from(Transform::from_xyz(100.0*rand::random::<f32>(), 200.0*rand::random::<f32>(), 0.0)))
+            .insert(Velocity {
+                linvel: Vec2::new(rand::random::<f32>(),rand::random::<f32>()) * 200.0,
+                angvel: 0.0,
+            })
+        .insert(ColliderMassProperties::Density(0.5))
+            .insert(Restitution::coefficient(0.7))
+            .insert(Damping {
+                linear_damping: 0.5,
+                angular_damping: 0.5
+            })
+        .insert(ReadMassProperties::default())
+            .insert(GravityScale(0.0))
+            .insert(Ccd::enabled())
+            .insert(ExternalForce {
+                force: Vec2::new(0.0,0.0),
+                torque: 0.0,
+            })
+        // Custom Stuff:
+        .insert(SpriteBundle {
+            texture: shape_material.clone(),
+            transform: Transform::default(),
+            ..Default::default()
+        });
+    }
+
+}
 
 fn pre_update_reset_forces(
     mut bodies: Query<&mut ExternalForce>,
@@ -66,7 +132,7 @@ pub struct CircleWithGravity<M: Material2d> {
     pub point_mass: ReadMassProperties,
 }
 
-fn setup_bodies_small(
+fn setup_bodies_large(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -109,9 +175,8 @@ fn setup_bodies_small(
             point_mass: ReadMassProperties::default(),
         });
     }
-
-
 }
+
 fn setup_bodies(
     mut commands: Commands,
     assets: Res<AssetServer>,
@@ -312,6 +377,7 @@ fn player_movement_system(
     _time: Res<Time>,
     keyboard_input: Res<Input<KeyCode>>,
     mut ext_forces: Query<&mut ExternalForce, With<Player>>,
+    mut fuel: ResMut<Fuel>,
     ) {
     let mut direction = Vec2::new(0.0, 0.0);
     if keyboard_input.pressed(KeyCode::W) {
@@ -326,9 +392,19 @@ fn player_movement_system(
     if keyboard_input.pressed(KeyCode::D) {
         direction.x += 1.0;
     }
-    for mut ext_force in ext_forces.iter_mut() {
-        ext_force.force += direction * 150.0;
+    if direction.length() > 0.0 {
+        direction = direction.normalize();
+        for mut ext_force in ext_forces.iter_mut() {
+            if fuel.amount >= 0.0 {
+                fuel.amount -= 1.0*_time.delta_seconds();
+                ext_force.force += direction * 150.0;
+            }
+        }
     }
+}
+
+fn print_fuel(fuel: Res<Fuel>) {
+    println!("Fuel: {}", fuel.amount);
 }
 
 
