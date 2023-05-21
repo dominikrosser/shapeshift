@@ -1,8 +1,5 @@
 
-use bevy::{prelude::*, render::render_resource::{PipelineDescriptor, ShaderStages, RenderPipelineDescriptor}};
-use bevy_rapier2d::prelude::{*, Velocity};
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy::window::PrimaryWindow;
+use bevy::prelude::*;
 
 use crate::Fuel;
 use crate::PlayerInputForce;

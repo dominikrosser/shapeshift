@@ -1,11 +1,9 @@
-
-
 use bevy::math::Vec3;
 use bevy::prelude::*;
 use particular::prelude::*;
 use bevy_rapier2d::prelude::*;
 
-use crate::Player;
+//use crate::Player;
 
 #[derive(Particle)]
 pub struct Body {
@@ -23,12 +21,6 @@ impl Body {
         }
     }
 }
-
-/*#[derive(Component)]
-pub enum PointMass {
-    HasGravity { mass: f32 },
-    AffectedByGravity,
-}*/
 
 pub struct ParticularPlugin;
 

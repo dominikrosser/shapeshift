@@ -1,7 +1,9 @@
-use bevy::{prelude::*, render::render_resource::{PipelineDescriptor, ShaderStages, RenderPipelineDescriptor}};
-use bevy_rapier2d::prelude::{*, Velocity};
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy::window::PrimaryWindow;
+use bevy::prelude::*;
+//use bevy::window::PrimaryWindow;
+use bevy_rapier2d::prelude::Velocity;
+use bevy_rapier2d::prelude::*;
+
+use crate::player::{PhysicsRigidBodyBundle, CustomShapeBundle, CustomShape};
 
 const STUFF_SPAWN_TIME_INTERVAL: f32 = 2.0;// seconds
 
@@ -24,40 +26,54 @@ pub fn tick_spawn_stuff_timer(
 
 pub fn spawn_stuff_over_time(
     mut commands: Commands,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    asset_server: Res<AssetServer>,
+    //window_query: Query<&Window, With<PrimaryWindow>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+
+    assets: Res<AssetServer>,
     spawn_stuff_timer: Res<SpawnStuffTimer>,
     ) {
-    let shape_material = asset_server.load("sprites\\ball_red_large.png");
+    //let shape_material = asset_server.load("sprites\\ball_red_large.png");
 
     if spawn_stuff_timer.timer.finished() {
-        let window = window_query.get_single().unwrap();
-        commands.spawn(RigidBody::Dynamic)
-            .insert(Collider::ball(32.0))
-            .insert(TransformBundle::from(Transform::from_xyz(100.0*rand::random::<f32>(), 200.0*rand::random::<f32>(), 0.0)))
-            .insert(Velocity {
-                linvel: Vec2::new(rand::random::<f32>(),rand::random::<f32>()) * 2000.0,
-                angvel: 0.0,
-            })
-        .insert(ColliderMassProperties::Density(0.5))
-            .insert(Restitution::coefficient(0.7))
-            .insert(Damping {
-                linear_damping: 0.5,
-                angular_damping: 0.5
-            })
-        .insert(ReadMassProperties::default())
-            .insert(GravityScale(0.0))
-            .insert(Ccd::enabled())
-            .insert(ExternalForce {
-                force: Vec2::new(0.0,0.0),
-                torque: 0.0,
-            })
-        // Custom Stuff:
-        .insert(SpriteBundle {
-            texture: shape_material.clone(),
-            transform: Transform::default(),
-            ..Default::default()
-        });
+        //let window = window_query.get_single().unwrap();
+        //commands.spawn(RigidBody::Dynamic)
+            //.insert(Collider::ball(32.0))
+            //.insert(TransformBundle::from(Transform::from_xyz(100.0*rand::random::<f32>(), 200.0*rand::random::<f32>(), 0.0)))
+            //.insert(Velocity {
+                //linvel: Vec2::new(rand::random::<f32>(),rand::random::<f32>()) * 2000.0,
+                //angvel: 0.0,
+            //})
+        //.insert(ColliderMassProperties::Density(0.5))
+            //.insert(Restitution::coefficient(0.7))
+            //.insert(Damping {
+                //linear_damping: 0.5,
+                //angular_damping: 0.5
+            //})
+        //.insert(ReadMassProperties::default())
+            //.insert(GravityScale(0.0))
+            //.insert(Ccd::enabled())
+            //.insert(ExternalForce {
+                //force: Vec2::new(0.0,0.0),
+                //torque: 0.0,
+            //})
+        //// Custom Stuff:
+        //.insert(SpriteBundle {
+            //texture: shape_material.clone(),
+            //transform: Transform::default(),
+            //..Default::default()
+        //});
+        
+        commands.spawn((
+                PhysicsRigidBodyBundle {
+                    velocity: Velocity {
+                        linvel: Vec2::new(rand::random::<f32>(),rand::random::<f32>()) * 2000.0,
+                        angvel: 0.0,
+                    },
+                    ..Default::default()
+                },
+                CustomShapeBundle::new(CustomShape::random_regular_polygon(), Transform::default(), meshes, materials, assets)
+            ));
     }
 
 }
