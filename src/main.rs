@@ -1,12 +1,21 @@
 #![feature(slice_range)]
 
 mod nbody;
+mod spawner;
+mod force_application_plugin;
+mod camera_plugin;
+mod player_input_plugin;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, render::render_resource::{PipelineDescriptor, ShaderStages, RenderPipelineDescriptor}};
 use bevy_rapier2d::prelude::{*, Velocity};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy::window::PrimaryWindow;
+
 use nbody::ParticularPlugin;
+use spawner::{SpawnStuffTimer, tick_spawn_stuff_timer, spawn_stuff_over_time};
+use force_application_plugin::GMForceApplicationPlugin;
+use camera_plugin::{GMCameraPlugin, CameraSettings};
+use player_input_plugin::{PlayerInputPlugin};
 
 const G: f32 = 500000.0;// Arbitrarily chosen gravitational constant
 const NUM_RANDOMLY_ADDED_BODIES: usize = 8;
@@ -17,19 +26,32 @@ fn main() {
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
         .add_plugin(RapierDebugRenderPlugin::default())
         .add_plugin(WorldInspectorPlugin::new())
-        .add_plugin(GMCameraPlugin)
         .add_plugin(ParticularPlugin)
+
+        .add_plugin(GMCameraPlugin)
+        .add_plugin(GMForceApplicationPlugin)
+        .add_plugin(PlayerInputPlugin)
+
         .add_startup_system(setup_player)
         .add_startup_system(setup_bodies)
         .add_startup_system(setup_platform_walls)
+        //.add_startup_system(setup_bodies_large)
+
         .insert_resource(ClearColor(Color::BLACK))
+        .insert_resource(Msaa::default())// idk what this does
+         
         .init_resource::<Fuel>()
-        .add_system(print_ball_altitude)
-        .add_system(
-            pre_update_reset_forces.before(nbody::accelerate_particles).before(player_movement_system))
-        .add_system(player_movement_system.after(nbody::accelerate_particles))
-        .add_system(print_fuel)
         .init_resource::<SpawnStuffTimer>()
+        .init_resource::<PlayerInputForce>()
+        
+        //.add_system(player_movement_input
+                    //.before(force_application_plugin::apply_player_input_force)
+                    //.before(nbody::accelerate_particles)
+                    //.after(force_application_plugin::pre_update_reset_forces)
+                    //.before(print_fuel))
+        .add_system(print_fuel)
+        .add_system(print_ball_altitude)
+        
         .add_system(tick_spawn_stuff_timer)
         .add_system(spawn_stuff_over_time)
         .run();
@@ -47,72 +69,15 @@ impl Default for Fuel {
     }
 }
 
-const STUFF_SPAWN_TIME_INTERVAL: f32 = 5.0;// seconds
-
 #[derive(Resource)]
-pub struct SpawnStuffTimer {
-    pub timer: Timer,
-}
-impl Default for SpawnStuffTimer {
+pub struct PlayerInputForce(pub Vec2);
+impl Default for PlayerInputForce {
     fn default() -> Self {
-        Self {
-            timer: Timer::from_seconds(STUFF_SPAWN_TIME_INTERVAL, TimerMode::Repeating),
-        }
+        Self(Vec2::default())
     }
 }
 
-fn tick_spawn_stuff_timer(
-    mut spawn_stuff_timer: ResMut<SpawnStuffTimer>, time: Res<Time>) {
-    spawn_stuff_timer.timer.tick(time.delta());
-}
 
-fn spawn_stuff_over_time(
-    mut commands: Commands,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    asset_server: Res<AssetServer>,
-    spawn_stuff_timer: Res<SpawnStuffTimer>,
-    ) {
-    let shape_material = asset_server.load("sprites\\ball_red_large.png");
-
-    if spawn_stuff_timer.timer.finished() {
-        let window = window_query.get_single().unwrap();
-        commands.spawn(RigidBody::Dynamic)
-            .insert(Collider::ball(32.0))
-            .insert(TransformBundle::from(Transform::from_xyz(100.0*rand::random::<f32>(), 200.0*rand::random::<f32>(), 0.0)))
-            .insert(Velocity {
-                linvel: Vec2::new(rand::random::<f32>(),rand::random::<f32>()) * 200.0,
-                angvel: 0.0,
-            })
-        .insert(ColliderMassProperties::Density(0.5))
-            .insert(Restitution::coefficient(0.7))
-            .insert(Damping {
-                linear_damping: 0.5,
-                angular_damping: 0.5
-            })
-        .insert(ReadMassProperties::default())
-            .insert(GravityScale(0.0))
-            .insert(Ccd::enabled())
-            .insert(ExternalForce {
-                force: Vec2::new(0.0,0.0),
-                torque: 0.0,
-            })
-        // Custom Stuff:
-        .insert(SpriteBundle {
-            texture: shape_material.clone(),
-            transform: Transform::default(),
-            ..Default::default()
-        });
-    }
-
-}
-
-fn pre_update_reset_forces(
-    mut bodies: Query<&mut ExternalForce>,
-) {
-    for mut body in bodies.iter_mut() {
-        body.force = Vec2::new(0.0, 0.0);
-    }
-}
 use bevy::sprite::MaterialMesh2dBundle;
 use std::f32::consts::PI;
 use bevy::sprite::Material2d;
@@ -215,71 +180,7 @@ fn setup_bodies(
 
 }
 
-pub struct GMCameraPlugin;
-impl Plugin for GMCameraPlugin {
-    fn build(&self, app: &mut App) {
-        app
-            .add_startup_system(setup_camera)
-            .add_system(move_camera_system);
-    }
-}
 
-pub struct CameraSettings {
-    pub far: f32,
-    pub scale_x: f32,
-    pub scale_y: f32,
-    pub follow_player: bool,
-    pub camera_follow_speed: f32,
-}
-
-const CAMERA_SETTINGS : CameraSettings = CameraSettings {
-    far: 1000.0,
-    scale_x: 2.0,
-    scale_y: 2.0,
-    follow_player: true,
-    camera_follow_speed: 100.0,
-};
-
-fn setup_camera(
-    mut commands: Commands,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    ) {
-    let _window = window_query.get_single().unwrap();
-    commands.spawn(
-            Camera2dBundle {
-                transform: 
-                    Transform::from_xyz(0.0, 0.0, 1.0)
-                        .with_scale(Vec3::new(CAMERA_SETTINGS.scale_x, CAMERA_SETTINGS.scale_y, 1.)),
-                projection: OrthographicProjection {
-                    far: CAMERA_SETTINGS.far,
-                    ..default()
-                },
-                ..default()
-            })
-            ;
-}
-
-fn move_camera_system(
-    mut camera_transform_query: Query<&mut Transform, (With<Camera2d>, Without<Player>)>,
-    player_transform_query: Query<&Transform, (With<Player>, Changed<Transform>)>,
-    time: Res<Time>,
-    ) {
-
-    if !CAMERA_SETTINGS.follow_player {
-        return;
-    }
-    // Get the player's translation
-    if let Ok(player_transform) = player_transform_query.get_single() {
-        let player_translation = player_transform.translation;
-        for mut camera_transform in camera_transform_query.iter_mut() {
-            let camera_translation = camera_transform.translation;
-            let speed = CAMERA_SETTINGS.camera_follow_speed;
-            let movement_delta = (player_translation - camera_translation) * time.delta_seconds() * speed;
-            let movement_delta = movement_delta.clamp_length_max((player_translation-camera_translation).length());
-            camera_transform.translation += movement_delta;// Replace this with = for a cool effect
-        }
-    }
-}
 
 fn setup_platform_walls(
     mut commands: Commands,
@@ -373,35 +274,7 @@ fn print_ball_altitude(positions: Query<&Transform, (With<RigidBody>, With<Playe
 #[derive(Component)]
 pub struct Player {}
 
-fn player_movement_system(
-    _time: Res<Time>,
-    keyboard_input: Res<Input<KeyCode>>,
-    mut ext_forces: Query<&mut ExternalForce, With<Player>>,
-    mut fuel: ResMut<Fuel>,
-    ) {
-    let mut direction = Vec2::new(0.0, 0.0);
-    if keyboard_input.pressed(KeyCode::W) {
-        direction.y += 1.0;
-    }
-    if keyboard_input.pressed(KeyCode::S) {
-        direction.y -= 1.0;
-    }
-    if keyboard_input.pressed(KeyCode::A) {
-        direction.x -= 1.0;
-    }
-    if keyboard_input.pressed(KeyCode::D) {
-        direction.x += 1.0;
-    }
-    if direction.length() > 0.0 {
-        direction = direction.normalize();
-        for mut ext_force in ext_forces.iter_mut() {
-            if fuel.amount >= 0.0 {
-                fuel.amount -= 1.0*_time.delta_seconds();
-                ext_force.force += direction * 150.0;
-            }
-        }
-    }
-}
+
 
 fn print_fuel(fuel: Res<Fuel>) {
     println!("Fuel: {}", fuel.amount);
