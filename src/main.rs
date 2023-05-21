@@ -87,6 +87,7 @@ fn setup_bodies(
                     transform: Transform::from_xyz(100.0*fact, 200.0, 0.0),
                     ..default()
                 },
+                Collider::ball(32.0),
                 PhysicsRigidBodyBundle::default(),
                 ));
     }
